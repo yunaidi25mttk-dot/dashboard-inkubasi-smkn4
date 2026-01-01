@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard Realtime Monitoring Ruang Inkubasi</title>
+
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+
+      background-image: 
+	linear-gradient(
+	  rgba(219, 234, 254, 0.75),
+	  rgba(224, 242, 255, 0.75)
+	),
+        url("iot2.jpg");
+
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+}
+
+.container {
+  max-width: 1000px;     /* 🔥 perbesar area putih */
+  margin: 20px auto;
+  padding: 20px 30px;
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+h1 {
+   text-align: center;
+   margin-top: 0;
+}
+    #connStatus {
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+    #statusBox {
+      margin-top: 10px;
+      padding: 10px 14px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 6px;
+      display: inline-block;
+    }
+    .status-normal {
+      background-color: #d4edda;
+      color: #155724;
+      border: 2px solid #28a745;
+    }
+    .status-high {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 2px solid #dc3545;
+    }
+    .status-low {
+      background-color: #d1ecf1;
+      color: #0c5460;
+      border: 2px solid #17a2b8;
+    }
+    .form-row {
+      margin-top: 20px;
+    }
+    input[type="text"] {
+      width: 600px;              /* biar tidak kepanjangan */
+      max-width: 100%;
+      padding: 8px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      margin-right: 6px;
+    }
+    .btn-water {
+      background: #e0f4ff;
+      border: 1px solid #3399ff;
+    }
+    .btn-dryer {
+      background: #ffe9d6;
+      border: 1px solid #ff8800;
+    }
+    #log {
+      max-width: 600px;     /* BATASI LEBAR */
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.75);
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 13px;
+      overflow-y: auto;
+      max-height: 140px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+     }
+
+.chart-grid {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  max-width: 1400px;   /* ⬅️ INI PENTING */
+  margin: 0 auto;
+}
+
+.card {
+  background: rgba(255,255,255,0.95);
+  padding: 18px;
+  border-radius: 14px;
+  width: 100%;              /* PENTING */
+  max-width: 480px;         /* <<< BESARIN DARI SEBELUMNYA */
+  box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+  text-align: center;
+}
+
+canvas {
+  width: 100% !important;
+  height: 200px !important;
+}
+.card h2 {
+  font-size: 28px;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.logo {
+  width: 70px;
+  height: auto;
+}
+
+.header-text h1 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.header-text p {
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: bold;
+  color: #555;
+}
+
+</style>
+</head>
+
+<body>
+<body>
+
+<div class="container">
+
+  <!-- HEADER (LOGO + JUDUL) -->
+  <div class="header">
+    <img src="logo-SMKN4.png" alt="Logo Sekolah" class="logo">
+
+    <div class="header-text">
+      <h1>Dashboard Realtime Monitoring Ruang Inkubasi</h1>
+      <p>SMK NEGERI 4 DUMAI</p>
+    </div>
+  </div>
+
+  <!-- STATUS KONEKSI -->
+  <div id="connStatus">WebSocket: menghubungkan...</div>
+
+  <!-- GRID GRAFIK -->
+  <div class="chart-grid">
+    <!-- card suhu -->
+    <div class="card">
+      <h2 id="tempValue">-- °C</h2>
+      <p>Suhu Ruangan</p>
+      <canvas id="tempChart"></canvas>
+    </div>
+
+    <!-- card kelembapan -->
+    <div class="card">
+      <h2 id="humValue">-- %</h2>
+      <p>Kelembapan</p>
+      <canvas id="humChart"></canvas>
+    </div>
+
+    <!-- card tekanan -->
+    <div class="card">
+      <h2 id="pressValue">-- hPa</h2>
+      <p>Tekanan</p>
+      <canvas id="pressChart"></canvas>
+    </div>
+  </div>
+
+</div>
+</body>
+
+
+
+  <div id="statusBox" class="status-normal">Status Ruangan: -</div>
+
+  <div class="form-row">
+    <h3>Kirim Pesan Ke Layar:</h3>
+    <input id="textInput" type="text" placeholder="Ketik pesan di sini...">
+    <button onclick="sendText()">Kirim Pesan</button>
+  </div>
+
+  <div class="form-row">
+    <h3>Kontrol Manual Proses:</h3>
+    <button class="btn-dryer" onclick="sendControl('dryer')">
+      Pemanas Ruangan
+    </button>
+    <button class="btn-water" onclick="sendControl('water')">
+      Pendingin Ruangan
+    </button>
+  </div>
+
+  <h3>Log sistem:</h3>
+  <div id="log"></div>
+</div>
+
+<script>
+
+// ===== FUNGSI UPDATE STATUS =====
+  function updateStatusBox(temperature) {
+  const box = document.getElementById("statusBox");
+
+  let status = "";
+
+  if (temperature < 18) {
+    status = "LOW";
+    box.className = "status-low";
+  } else if (temperature >= 18 && temperature <= 25) {
+    status = "NORMAL";
+    box.className = "status-normal";
+  } else {
+    status = "HIGH";
+    box.className = "status-high";
+  }
+
+  box.textContent = "Status Ruangan: " + status;
+}
+
+
+
+  const wsUrl = "ws://192.168.0.105:8770";
+
+  const connStatusEl = document.getElementById("connStatus");
+  const logEl = document.getElementById("log");
+  const statusBox = document.getElementById("statusBox");
+
+  let ws = null;
+
+  function addLog(msg) {
+    const time = new Date().toLocaleTimeString();
+    logEl.textContent = `[${time}] ${msg}\n` + logEl.textContent;
+  }
+
+  function connectWS() {
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      connStatusEl.textContent = "WebSocket: tersambung ke " + wsUrl;
+      connStatusEl.style.color = "green";
+      addLog("Terhubung ke WebSocket");
+    };
+
+    ws.onclose = () => {
+      connStatusEl.textContent = "WebSocket: terputus (mencoba ulang...)";
+      connStatusEl.style.color = "red";
+      addLog("Koneksi WebSocket terputus, coba lagi 3 detik...");
+      setTimeout(connectWS, 3000);
+    };
+
+    ws.onerror = () => {
+      connStatusEl.textContent = "WebSocket: error";
+      connStatusEl.style.color = "red";
+      addLog("Error WebSocket");
+    };
+
+    ws.onmessage = (event) => {
+  try {
+    const data = JSON.parse(event.data);
+
+    console.log("PAYLOAD:", data);
+
+    // tampilkan nilai realtime
+    document.getElementById("tempValue").innerText = data.temperature + " °C";
+    document.getElementById("humValue").innerText  = data.humidity + " %";
+    document.getElementById("pressValue").innerText = data.pressure + " hPa";
+
+        addLog(
+          `Data masuk -> T=${data.temperature}°C; ` +
+          `H=${data.humidity}%; ` +
+          `P=${data.pressure} hPa; status=${data.status}`
+        );
+
+        addDataToChart(
+          data.timestamp,
+          data.temperature,
+          data.humidity,
+          data.pressure
+        );
+
+        updateStatusBox(data.temperature);
+      } catch (e) {
+        addLog("Data tidak valid: " + event.data);
+      }
+    };
+  }
+
+  connectWS();
+
+  function ensureWS() {
+    return ws && ws.readyState === WebSocket.OPEN;
+  }
+
+  function sendText() {
+    const textInput = document.getElementById("textInput");
+    const msg = textInput.value.trim();
+    if (!msg) return;
+
+    if (!ensureWS()) {
+      addLog("WebSocket belum tersambung");
+      return;
+    }
+
+    ws.send(JSON.stringify({ type: "text", message: msg }));
+    addLog("Kirim pesan: " + msg);
+    textInput.value = "";
+  }
+
+  function sendControl(action) {
+    if (!ensureWS()) {
+      addLog("WebSocket belum tersambung");
+      return;
+    }
+    ws.send(JSON.stringify({ type: "control", action }));
+    addLog("Kirim kontrol: " + action.toUpperCase());
+  }
+
+  // ================= CHART =================
+
+  const tempCtx = document.getElementById("tempChart").getContext("2d");
+  const humCtx  = document.getElementById("humChart").getContext("2d");
+  const presCtx = document.getElementById("pressChart").getContext("2d");
+
+  const tempChart = new Chart(tempCtx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Suhu (°C)",
+        data: [],
+        borderColor: "red",
+        tension: 0.3
+      }]
+    }
+  });
+
+  const humChart = new Chart(humCtx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Kelembapan (%)",
+        data: [],
+        borderColor: "blue",
+        tension: 0.3
+      }]
+    }
+  });
+
+  const pressChart = new Chart(presCtx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Tekanan (hPa)",
+        data: [],
+        borderColor: "green",
+        tension: 0.3
+      }]
+    }
+  });
+
+function addDataToChart(timestamp, temperature, humidity, pressure) {
+  tempChart.data.labels.push(timestamp);
+  tempChart.data.datasets[0].data.push(temperature);
+
+  humChart.data.labels.push(timestamp);
+  humChart.data.datasets[0].data.push(humidity);
+
+  pressChart.data.labels.push(timestamp);
+  pressChart.data.datasets[0].data.push(pressure);
+
+  if (tempChart.data.labels.length > 20) {
+    tempChart.data.labels.shift();
+    tempChart.data.datasets[0].data.shift();
+    humChart.data.labels.shift();
+    humChart.data.datasets[0].data.shift();
+    pressChart.data.labels.shift();
+    pressChart.data.datasets[0].data.shift();
+  }
+
+  tempChart.update();
+  humChart.update();
+  pressChart.update();
+}
+
+
+</script>
+</body>
+</html>
